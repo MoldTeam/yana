@@ -21,11 +21,6 @@ class _DatabaseEntity:
                     raise TypeError(f'table columns element {column} with index {i} not a string')
                 i += 1
             object.__setattr__(self, name, value)
-        elif name == 'columns':
-            for key in value:
-                if key not in self.table_columns:
-                    raise ValueError(f'this table don`t have column {key}')
-            object.__setattr__(self, name, value)
         elif name == 'table_name':
             if type(value) != str:
                 raise TypeError('table name must be a string')
@@ -140,17 +135,31 @@ class PostgreORM:
                     self.__conn.commit()
                 return q.fetchall()
 
-    def __check_columns(self, table_columns: Iterable[str], columns: Iterable[str]):
+    def __get_columns_names(self, table_columns: Iterable[str], columns: Iterable[str]):
         if columns is None:
             raise ValueError('columns is required argument')
-        if type(columns) not in (list, tuple):
+        elif type(columns) not in (list, tuple):
             raise TypeError('columns argument must be a list or tuple')
         else:
             if len(columns) < 1:
                 raise ValueError('must specify at least one column in columns argument')
-            for column in columns:
+            def check_column_type(column):
+                if type(column) != str:
+                    raise TypeError(f'column "{column}" not a string')
+            def check_column_existence(table_columns: Iterable[str], column: str):
                 if column not in table_columns:
-                    raise ValueError(f'table don`t have column {column}')
+                    raise ValueError(f'this table don`t have column "{column}"')
+            cols = []
+            for column in columns:
+                check_column_type(column)
+                column_for_check = column.lower()
+                splited_column = column.split(' ')
+                if ' as ' in column_for_check:
+                    cols.append(splited_column[-1])
+                else:
+                    check_column_existence(table_columns, column)
+                    cols.append(splited_column[0])
+            return cols
 
     def __check_alias(self, alias: str, alias_name: str):
         if alias != '':
@@ -181,12 +190,24 @@ class PostgreORM:
         elif type(count) == int and count < 1:
             raise ValueError('count argument must be greater than zero')
 
-    def select_from_table(self, entity, columns: Iterable[str], where='', group_by='', having='', order_by='', count='all'):
+    def select_from_table(self, entity, columns: Iterable[str], table_alias='', joins=['join expression'], where='', group_by='', having='', order_by='', count='all'):
         # checking arguments
-        self.__check_columns(entity.table_columns, columns)
+        cols = self.__get_columns_names(entity.table_columns, columns)
         self.__check_count(count)
+        self.__check_alias(table_alias, 'table alias')
         # generating query
         query = f"SELECT {', '.join(columns)} FROM {entity.table_name}"
+        if table_alias != '':
+            query += f" AS {table_alias}"
+        if joins != ['join expression']:
+            if type(joins) != list:
+                raise TypeError('joins argument must be a list')
+            else:
+                for e in joins:
+                    if type(e) != str:
+                        raise TypeError(f"value '{e}' in joins list not a string")
+                    else:
+                        query += f" JOIN {e}"
         if where != '':
             query += f" WHERE {where}"
         if group_by != '':
@@ -211,23 +232,23 @@ class PostgreORM:
             query += f" LIMIT {count}"
         # execute and return
         data = self.execute(query)
-        return self.__get_entities_with_data(entity, columns, data)
+        return self.__get_entities_with_data(entity, cols, data)
 
-    def get_sources(self, columns=['id', 'domain', 'description', 'is_api'], where='', group_by='', having='', order_by='', count='all'):
+    def get_sources(self, columns=['id', 'domain', 'description', 'is_api'], table_alias='', joins=['join expression'], where='', group_by='', having='', order_by='', count='all'):
         return self.select_from_table(
-            Source, columns, where, group_by,
+            Source, columns, table_alias, joins, where, group_by,
             having, order_by, count
         )
 
-    def get_news_topics(self, columns=['id', 'name', 'parent_news_topic_id', 'description'], where='', group_by='', having='', order_by='', count='all'):
+    def get_news_topics(self, columns=['id', 'name', 'parent_news_topic_id', 'description'], table_alias='', joins=['join expression'], where='', group_by='', having='', order_by='', count='all'):
         return self.select_from_table(
-            NewsTopic, columns, where,
+            NewsTopic, columns, table_alias, joins, where,
             group_by, having, order_by, count
         )
 
-    def get_sources_references(self, columns=['id', 'source_domain', 'news_topic_id', 'url', 'description'], where='', group_by='', having='', order_by='', count='all'):
+    def get_sources_references(self, columns=['id', 'source_domain', 'news_topic_id', 'url', 'description'], table_alias='', joins=['join expression'], where='', group_by='', having='', order_by='', count='all'):
         return self.select_from_table(
-            SourceReference, columns, where,
+            SourceReference, columns, table_alias, joins, where,
             group_by, having, order_by, count
         )
 
@@ -235,7 +256,6 @@ class PostgreORM:
 
     def insert_into_table(self, entity, columns: Iterable[str], table_alias='', overriding_value='', default_values=False, values=list[list], on_conflict='', returning='', returning_alias=''):
         # checking and prepare arguments
-        self.__check_columns(entity.table_columns, columns)
         self.__check_alias(table_alias, 'table alias')
         table_alias = table_alias.strip()
         if overriding_value != '':
@@ -281,10 +301,12 @@ class PostgreORM:
             if on_conflict != '':
                 query += f" ON CONFLICT {on_conflict}"
             if returning != '':
+                cols = self.__get_columns_names(entity.table_columns, columns)
                 query += f" RETURNING {returning}"
                 if returning_alias != '':
                     query += f" AS {returning_alias}"
-                return self.execute(query)
+                data = self.execute(query)
+                return self.__get_entities_with_data(entity, cols, data)
             else:
                 self.execute(query)
 
@@ -357,8 +379,6 @@ class PostgreORM:
 
     def update_table(self, entity, table_alias='', set_values={'column_name': 'expression'}, from_item='', where='', returning='', returning_alias=''):
         # checking and prepare arguments
-        columns = [column for column in set_values]
-        self.__check_columns(entity.table_columns, columns)
         self.__check_alias(table_alias, 'table alias')
         self.__check_alias(returning_alias, 'returning alias')
         self.__check_dict_of_str(set_values, 'columns values', {'column_name': 'expression'})
@@ -387,7 +407,6 @@ class PostgreORM:
                 query += f" AS {returning_alias}"
             return self.execute(query)
         else:
-            print(query)
             self.execute(query)
 
     def update_sources(self, table_alias='', set_values={'column_name': 'expression'}, from_item='', where='', returning='', returning_alias=''):
