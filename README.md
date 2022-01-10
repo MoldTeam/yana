@@ -6,9 +6,10 @@ This is a Python news aggregator program that works with diferents sources and A
 
 ## Version
 
-**0.02**
+**0.03**
 
 ## List of versions
+**0.03** - Was written methods for obtaining news data from vedomosti.md
 
 **0.02** - Was written methods for obtaining news data from point.md.
 
