@@ -4,6 +4,7 @@ import requests
 import json
 from datetime import datetime
 import re
+from bs4 import BeautifulSoup
 
 
 class Source:
@@ -56,7 +57,7 @@ class Source:
 
 
 class NewsData:
-   def __init__(self, id_: str, title: str, url: str, posted: datetime, intro=None):
+   def __init__(self, id_: str, title: str, url: str, posted: datetime, text: str, intro=None):
       # ID format - "<source_domain>_<source_topic>"
       self.id = id_
       self.title = title
@@ -64,6 +65,7 @@ class NewsData:
       # Full news URL
       self.url = url
       self.posted = posted
+      self.text = text
    
    def __setattr__(self, name, value):
       if name == 'id':
@@ -79,9 +81,9 @@ class NewsData:
          if not re.match(topic_pattern, spl[1]):
             raise ValueError('topic in id attribute is in the wrong format')
          object.__setattr__(self, name, value)
-      elif name == 'title':
+      elif name in ('title', 'text'):
          if type(value) != str:
-            raise TypeError("title must be a string")
+            raise TypeError(f"{name} must be a string")
          object.__setattr__(self, name, value)
       elif name == 'url':
          if type(value) != str:
@@ -150,6 +152,30 @@ def _search_instance_by_domain(domain):
    for instance in instances:
       if instance.domain == domain:
          return instance
+
+def _get_news_text(url: str, attrs: dict[str: str], tag_name='div', exclude_elems=[], check_child_for_exclude=True, strip_duplicated=True) -> str:
+   res = requests.get(url)
+   soup = BeautifulSoup(res.text, 'html.parser')
+   text_elem = soup.find(tag_name, attrs)
+   elems = text_elem.find_all()
+   exclude_elems = exclude_elems + ['a']
+   previous_text = None
+   text = ''
+   for elem in elems:
+      if elem.name not in exclude_elems:
+         if check_child_for_exclude:
+            child_elems = elem.find_all()
+            exists_exclude_elem = False
+            for el in child_elems:
+               if el.name in exclude_elems:
+                  exists_exclude_elem = True
+            if not exists_exclude_elem:
+               if strip_duplicated and elem.text != previous_text:
+                  text += elem.text
+         elif strip_duplicated and elem.text != previous_text:
+            text += elem.text
+         previous_text = elem.text
+   return text
 
 
 # In this list are all modified instances with methods added to them
@@ -273,17 +299,20 @@ def _get_society_news(source=instance):
    objects = []
    for key in news_data:
       news = news_data[key]
+      news_url = url + '/' + news['url'] + '/'
+      # Create NewsData instance
       obj = NewsData(
          'point.md_society',
          news['title']['short'],
-         instance.references['society'] + news['url'] + '/',
+         news_url,
          datetime(
             int(news['dates']['postedSeparator'][-4:]),
             _get_month_count(news['dates']['postedDM'].split(' ')[1]),
             int(news['dates']['postedDM'].split(' ')[0]),
-            news['dates']['postedH'].split(':')[0],
-            news['dates']['postedH'].split(':')[1]
+            int(news['dates']['postedH'].split(':')[0]),
+            int(news['dates']['postedH'].split(':')[1])
          ),
+         _get_news_text(news_url, {'id': 'article-content'}),
          news['description']['intro']
       )
       objects.append(obj)
@@ -334,7 +363,6 @@ instance.get_society_news = _get_society_news
 def _get_news_data(news_topic: str, start_key: str, end_key: str, source=instance):
    url = source.references[news_topic]
    res = requests.get(url)
-   # print(res.text)
    # Getting indexes
    start_index = res.text.find(start_key) + len(start_key)
    end_index = res.text.find(end_key)
@@ -346,10 +374,11 @@ def _get_news_data(news_topic: str, start_key: str, end_key: str, source=instanc
    objects = []
    for key in news_data:
       news = news_data[key]
+      news_url = url + news['url'] + '/'
       obj = NewsData(
          f'point.md_{news_topic}',
          news['title']['short'],
-         url + news['url'] + '/',
+         news_url,
          datetime(
             int(news['dates'][date_key][-4:]),
             _get_month_count(news['dates'][date_key].split(' ')[1]),
@@ -357,6 +386,7 @@ def _get_news_data(news_topic: str, start_key: str, end_key: str, source=instanc
             int(news['dates'][time_key].split(':')[0]),
             int(news['dates'][time_key].split(':')[1])
          ),
+         _get_news_text(news_url, {'id': 'article-content'}),
          news['description']['intro']
       )
       objects.append(obj)
@@ -411,6 +441,75 @@ def _get_politics_news():
    )
 
 instance.get_politics_news = _get_politics_news
+
+
+modified_instances.append(instance)
+
+
+instance = _search_instance_by_domain('vedomosti.md')
+
+def _get_news_data(topic: str, source=instance):
+   url = source.references[topic]
+   res = requests.get(url)
+   soup = BeautifulSoup(res.text, 'html.parser')
+   news_elem = soup.find('ul', class_='list-news')
+   news_list = news_elem.find_all('li')
+   objects = []
+   for news in news_list:
+      divs = news.find_all('div')
+      news_date = divs[0].get_text().split('.')
+      # Getting url and title
+      strong = divs[1].find('strong')
+      a = strong.find('a')
+      news_title = a.get_text()
+      news_url = 'http://vedomosti.md' + a['href']
+      # Getting intro
+      intro_elem = divs[2].find('span')
+      if intro_elem is None:
+         intro_elem = divs[2].find('p')
+      try:
+         news_intro = intro_elem.text
+      except AttributeError:
+         news_intro = divs[2].text
+      news_intro = news_intro.strip()
+      # Create NewsData instance
+      obj = NewsData(
+         f'vedomosti.md_{topic}',
+         news_title,
+         news_url,
+         datetime(
+            int(news_date[2]),
+            int(news_date[1]),
+            int(news_date[0])
+         ),
+         _get_news_text(news_url, {'class': 'article-content'}),
+         news_intro
+      )
+      objects.append(obj)
+      
+
+def _get_politics_news():
+   return _get_news_data('politics')
+
+instance.get_politics_news = _get_politics_news
+
+
+def _get_society_news():
+   return _get_news_data('society')
+
+instance.get_society_news = _get_society_news
+
+
+def _get_economy_news():
+   return _get_news_data('economy')
+
+instance.get_economy_news = _get_economy_news
+
+
+def _get_sport_news():
+   return _get_news_data('sport')
+
+instance.get_sport_news = _get_sport_news
 
 
 modified_instances.append(instance)
