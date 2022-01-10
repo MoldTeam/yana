@@ -1,8 +1,8 @@
-from .sources import NewsData, search_instance_by_domain
+from sources import NewsData, search_instance_by_domain
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-from .parsing_functions import get_news_text
+from parsing_functions import get_news_text
 
 
 VEDOMOSTI_MD = search_instance_by_domain('vedomosti.md')

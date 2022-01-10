@@ -1,8 +1,8 @@
-from .sources import search_instance_by_domain, NewsData
+from sources import search_instance_by_domain, NewsData
 import requests
 import json
 from datetime import datetime
-from .parsing_functions import get_news_text
+from parsing_functions import get_news_text
 
 
 POINT_MD = search_instance_by_domain('point.md')
