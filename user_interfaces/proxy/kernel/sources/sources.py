@@ -97,7 +97,7 @@ class NewsData:
          object.__setattr__(self, name, value)
 
    def get_posted_time(self):
-      return self.posted.strftime('%H:%M, %d.%m.%Y')
+      return self.posted.strftime('%H:%M %d.%m.%Y')
    
    def __str__(self):
       header = f"--- NewsData {self.id} ---"
