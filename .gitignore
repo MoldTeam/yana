@@ -1,9 +1,9 @@
 # main packages __pycache__
-./user_interfaces/__pycache__/
-./user_interfaces/proxy/__pycache__/
-./user_interfaces/proxy/kernel/__pycache__/
+user_interfaces/__pycache__/
+user_interfaces/proxy/__pycache__/
+user_interfaces/proxy/kernel/__pycache__/
 
 # kernel packages __pycache__
-./user_interfaces/proxy/kernel/sources/__pycache__/
-./user_interfaces/proxy/kernel/sources/db/__pycache__/
+user_interfaces/proxy/kernel/sources/__pycache__/
+user_interfaces/proxy/kernel/sources/db/__pycache__/
 
