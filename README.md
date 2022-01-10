@@ -6,10 +6,10 @@ This is a Python news aggregator program that works with diferents sources and A
 
 ## Version
 
-**0.2**
+**0.02**
 
 ## List of versions
 
-**0.2** - Was released point.md Source instance with methods for obtaining news data.
+**0.02** - Was written methods for obtaining news data from point.md.
 
-**0.1** - Released DB connectors and ORM.
+**0.01** - Released DB connectors and ORM.
